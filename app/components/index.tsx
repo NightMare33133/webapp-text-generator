@@ -22,6 +22,9 @@ import Loading from '@/app/components/base/loading'
 import AppUnavailable from '@/app/components/app-unavailable'
 import { API_KEY, APP_ID, APP_INFO, DEFAULT_VALUE_MAX_LEN, IS_WORKFLOW } from '@/config'
 import { userInputsFormToPromptVariables } from '@/utils/prompt'
+import HistoryPanel from './history'
+import type { WorkflowHistoryItem } from '@/types/history'
+import { clearHistoryList, deleteHistoryItem, getHistoryList, saveHistoryItem } from '@/utils/history-storage'
 
 const GROUP_SIZE = 5 // to avoid RPM(Request per minute) limit. The group task finished then the next group.
 enum TaskStatus {
@@ -72,6 +75,46 @@ const TextGeneration = () => {
     rating: null,
   })
 
+  // Workflow Execution History
+  const [historyList, setHistoryList] = useState<WorkflowHistoryItem[]>([])
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null)
+  const selectedHistoryItem = historyList.find(item => item.id === selectedHistoryId) || null
+
+  useEffect(() => {
+    if (APP_ID)
+      setHistoryList(getHistoryList(APP_ID))
+  }, [APP_ID])
+
+  const handleWorkflowRunFinished = (item: WorkflowHistoryItem) => {
+    const updated = saveHistoryItem(item)
+    setHistoryList(updated)
+  }
+
+  const handleSelectHistory = (item: WorkflowHistoryItem) => {
+    setSelectedHistoryId(item.id)
+    if (item.inputs)
+      setInputs(item.inputs)
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    showResSidebar()
+  }
+
+  const handleDeleteHistory = (id: string) => {
+    const updated = deleteHistoryItem(APP_ID, id)
+    setHistoryList(updated)
+    if (selectedHistoryId === id)
+      setSelectedHistoryId(null)
+  }
+
+  const handleClearAllHistory = () => {
+    clearHistoryList(APP_ID)
+    setHistoryList([])
+    setSelectedHistoryId(null)
+  }
+
+  const handleExitHistory = () => {
+    setSelectedHistoryId(null)
+  }
+
   const handleFeedback = async (feedback: Feedbacktype) => {
     await updateFeedback({ url: `/messages/${messageId}/feedbacks`, body: { rating: feedback.rating } })
     setFeedback(feedback)
@@ -115,6 +158,7 @@ const TextGeneration = () => {
   })
   const [completionFiles, setCompletionFiles] = useState<VisionFile[]>([])
   const handleSend = async () => {
+    setSelectedHistoryId(null)
     setIsCallBatchAPI(false)
     setControlSend(Date.now())
     // eslint-disable-next-line @typescript-eslint/no-use-before-define
@@ -372,7 +416,7 @@ const TextGeneration = () => {
 
   useEffect(() => {
     if (APP_INFO?.title)
-      document.title = `${APP_INFO.title} - Powered by Dify`
+      document.title = `${APP_INFO.title}`
   }, [APP_INFO?.title])
 
   const [isShowResSidebar, { setTrue: showResSidebar, setFalse: hideResSidebar }] = useBoolean(false)
@@ -398,6 +442,9 @@ const TextGeneration = () => {
       onCompleted={handleCompleted}
       visionConfig={visionConfig}
       completionFiles={completionFiles}
+      historyItem={!isCallBatchAPI ? selectedHistoryItem : null}
+      onExitHistory={handleExitHistory}
+      onWorkflowRunFinished={handleWorkflowRunFinished}
     />
   )
 
@@ -501,6 +548,15 @@ const TextGeneration = () => {
             items={[
               { id: 'create', name: t('app.generation.tabs.create') },
               { id: 'batch', name: t('app.generation.tabs.batch') },
+              {
+                id: 'history',
+                name: '历史记录',
+                extra: historyList.length > 0 ? (
+                  <span className='ml-1.5 px-1.5 py-0.5 text-[11px] rounded-full bg-primary-50 text-primary-600 font-semibold border border-primary-100'>
+                    {historyList.length}
+                  </span>
+                ) : null,
+              },
             ]}
             value={currTab}
             onChange={setCurrTab}
@@ -522,6 +578,15 @@ const TextGeneration = () => {
                 vars={promptConfig.prompt_variables}
                 onSend={handleRunBatch}
                 isAllFinished={allTaskRuned}
+              />
+            </div>
+            <div className={cn(currTab === 'history' ? 'block h-full' : 'hidden')}>
+              <HistoryPanel
+                items={historyList}
+                selectedId={selectedHistoryId}
+                onSelect={handleSelectHistory}
+                onDelete={handleDeleteHistory}
+                onClearAll={handleClearAllHistory}
               />
             </div>
           </div>

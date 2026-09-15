@@ -25,6 +25,7 @@ const WorkflowProcessItem = ({
   hideInfo = false,
 }: WorkflowProcessProps) => {
   const [collapse, setCollapse] = useState(!expand)
+  const [allExpanded, setAllExpanded] = useState<boolean | null>(null)
   const running = data.status === WorkflowRunningStatus.Running
   const succeeded = data.status === WorkflowRunningStatus.Succeeded
   const failed = data.status === WorkflowRunningStatus.Failed || data.status === WorkflowRunningStatus.Stopped
@@ -58,38 +59,56 @@ const WorkflowProcessItem = ({
     >
       <div
         className={cn(
-          'flex items-center h-[18px] cursor-pointer',
+          'flex items-center h-[22px] cursor-pointer select-none',
           hideInfo && 'px-[6px]',
         )}
         onClick={() => setCollapse(!collapse)}
       >
         {
           running && (
-            <Loading02 className='shrink-0 mr-1 w-3 h-3 text-[#667085] animate-spin' />
+            <Loading02 className='shrink-0 mr-1.5 w-3.5 h-3.5 text-[#667085] animate-spin' />
           )
         }
         {
           succeeded && (
-            <CheckCircle className='shrink-0 mr-1 w-3 h-3 text-[#12B76A]' />
+            <CheckCircle className='shrink-0 mr-1.5 w-3.5 h-3.5 text-[#12B76A]' />
           )
         }
         {
           failed && (
-            <AlertCircle className='shrink-0 mr-1 w-3 h-3 text-[#F04438]' />
+            <AlertCircle className='shrink-0 mr-1.5 w-3.5 h-3.5 text-[#F04438]' />
           )
         }
-        <div className='grow text-xs font-medium text-gray-700 leading-[18px]'>Workflow Process</div>
-        <ChevronRight className={`'ml-1 w-3 h-3 text-gray-500' ${collapse ? '' : 'rotate-90'}`} />
+        <div className='grow text-xs font-medium text-gray-700 leading-[18px] flex items-center gap-1.5'>
+          <span>工作流执行步骤</span>
+          {data.tracing?.length > 0 && (
+            <span className='text-gray-400 font-normal text-[11px]'>({data.tracing.length} 步)</span>
+          )}
+        </div>
+        {!collapse && data.tracing?.length > 0 && (
+          <button
+            type='button'
+            className='mr-2 text-[11px] font-medium text-primary-600 hover:text-primary-700 bg-white/80 hover:bg-white px-2 py-0.5 rounded border border-gray-200 transition-colors'
+            onClick={(e) => {
+              e.stopPropagation()
+              setAllExpanded(prev => !prev)
+            }}
+          >
+            {allExpanded ? '全部收起' : '全部展开'}
+          </button>
+        )}
+        <ChevronRight className={cn('ml-1 w-3.5 h-3.5 text-gray-500 transition-transform duration-200', !collapse && 'rotate-90')} />
       </div>
       {
         !collapse && (
-          <div className='mt-1.5'>
+          <div className='mt-2'>
             {
               data.tracing.map(node => (
-                <div key={node.id} className='mb-0.5 last-of-type:mb-0'>
+                <div key={node.id} className='mb-1 last-of-type:mb-0'>
                   <NodePanel
                     nodeInfo={node}
                     hideInfo={hideInfo}
+                    expand={allExpanded !== null ? allExpanded : undefined}
                   />
                 </div>
               ))

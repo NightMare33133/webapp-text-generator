@@ -104,6 +104,7 @@ export enum BlockEnum {
   HttpRequest = 'http-request',
   VariableAssigner = 'variable-assigner',
   Tool = 'tool',
+  Agent = 'agent',
 }
 
 export type NodeTracing = {

@@ -13,6 +13,10 @@ import type { Feedbacktype, PromptConfig, VisionFile, VisionSettings, WorkflowPr
 import { NodeRunningStatus, TransferMethod, WorkflowRunningStatus } from '@/types/app'
 import Loading from '@/app/components/base/loading'
 import { sleep } from '@/utils'
+import { ClockIcon } from '@heroicons/react/24/outline'
+import type { WorkflowHistoryItem } from '@/types/history'
+import { extractHistoryTitle, formatExactTime } from '@/utils/history-storage'
+import { APP_ID } from '@/config'
 
 export type IResultProps = {
   isWorkflow: boolean
@@ -30,6 +34,9 @@ export type IResultProps = {
   onCompleted: (completionRes: string, taskId?: number, success?: boolean) => void
   visionConfig: VisionSettings
   completionFiles: VisionFile[]
+  historyItem?: WorkflowHistoryItem | null
+  onExitHistory?: () => void
+  onWorkflowRunFinished?: (item: WorkflowHistoryItem) => void
 }
 
 const Result: FC<IResultProps> = ({
@@ -48,6 +55,9 @@ const Result: FC<IResultProps> = ({
   onCompleted,
   visionConfig,
   completionFiles,
+  historyItem,
+  onExitHistory,
+  onWorkflowRunFinished,
 }) => {
   const [isResponsing, { setTrue: setResponsingTrue, setFalse: setResponsingFalse }] = useBoolean(false)
   useEffect(() => {
@@ -69,6 +79,9 @@ const Result: FC<IResultProps> = ({
     doSetWorkflowProccessData(data)
   }
   const getWorkflowProccessData = () => workflowProcessDataRef.current
+
+  const activeCompletionRes = historyItem ? historyItem.outputs : completionRes
+  const activeProcessData = historyItem ? historyItem.workflowProcessData : workflowProcessData
 
   const { notify } = Toast
   const isNoData = !completionRes
@@ -212,21 +225,60 @@ const Result: FC<IResultProps> = ({
               notify({ type: 'error', message: data.error })
               setResponsingFalse()
               onCompleted(getCompletionRes(), taskId, false)
+              if (onWorkflowRunFinished) {
+                onWorkflowRunFinished({
+                  id: data.id || tempMessageId || `${Date.now()}`,
+                  appId: APP_ID || 'default',
+                  createdAt: Date.now(),
+                  title: extractHistoryTitle(inputs),
+                  inputs: { ...inputs },
+                  outputs: data.error,
+                  status: 'failed',
+                  workflowProcessData: getWorkflowProccessData(),
+                  totalDuration: data.elapsed_time,
+                  totalTokens: data.total_tokens,
+                })
+              }
               isEnd = true
               return
             }
-            setWorkflowProccessData(produce(getWorkflowProccessData()!, (draft) => {
-              draft.status = data.error ? WorkflowRunningStatus.Failed : WorkflowRunningStatus.Succeeded
-            }))
+            const currentData = getWorkflowProccessData()
+            const finalProcessData = currentData ? produce(currentData, (draft) => {
+              draft.status = WorkflowRunningStatus.Succeeded
+            }) : undefined
+
+            if (finalProcessData)
+              setWorkflowProccessData(finalProcessData)
+
+            let outputText = ''
             if (!data.outputs)
-              setCompletionRes('')
+              outputText = ''
+            else if (typeof data.outputs === 'string')
+              outputText = data.outputs
             else if (Object.keys(data.outputs).length > 1)
-              setCompletionRes(data.outputs)
+              outputText = JSON.stringify(data.outputs, null, 2)
             else
-              setCompletionRes(data.outputs[Object.keys(data.outputs)[0]])
+              outputText = data.outputs[Object.keys(data.outputs)[0]]
+
+            setCompletionRes(outputText)
             setResponsingFalse()
             setMessageId(tempMessageId)
-            onCompleted(getCompletionRes(), taskId, true)
+            onCompleted(outputText, taskId, true)
+
+            if (onWorkflowRunFinished) {
+              onWorkflowRunFinished({
+                id: data.id || tempMessageId || `${Date.now()}`,
+                appId: APP_ID || 'default',
+                createdAt: data.created_at ? (data.created_at > 1e11 ? data.created_at : data.created_at * 1000) : Date.now(),
+                title: extractHistoryTitle(inputs),
+                inputs: { ...inputs },
+                outputs: outputText,
+                status: 'succeeded',
+                workflowProcessData: finalProcessData,
+                totalDuration: data.elapsed_time,
+                totalTokens: data.total_tokens,
+              })
+            }
             isEnd = true
           },
         },
@@ -273,34 +325,60 @@ const Result: FC<IResultProps> = ({
   const renderTextGenerationRes = () => (
     <TextGenerationRes
       isWorkflow={isWorkflow}
-      workflowProcessData={workflowProcessData}
-      className='mt-3'
-      isError={isError}
+      workflowProcessData={activeProcessData}
+      className='mt-1'
+      isError={isError || (historyItem?.status === 'failed')}
       onRetry={handleSend}
-      content={completionRes}
-      messageId={messageId}
+      content={activeCompletionRes}
+      messageId={historyItem ? historyItem.id : messageId}
       isInWebApp
       onFeedback={handleFeedback}
       feedback={feedback}
       isMobile={isMobile}
-      isLoading={isCallBatchAPI ? (!completionRes && isResponsing) : false}
+      isLoading={isCallBatchAPI ? (!activeCompletionRes && isResponsing) : false}
       taskId={isCallBatchAPI ? ((taskId as number) < 10 ? `0${taskId}` : `${taskId}`) : undefined}
     />
   )
 
+  const hasContent = !!activeCompletionRes || !!activeProcessData
+
   return (
-    <div className={cn(isNoData && !isCallBatchAPI && 'h-full')}>
+    <div className={cn(!hasContent && !isCallBatchAPI && 'h-full')}>
       {!isCallBatchAPI && (
-        (isResponsing && !completionRes)
+        (isResponsing && !activeCompletionRes)
           ? (
             <div className='flex h-full w-full justify-center items-center'>
               <Loading type='area' />
             </div>)
           : (
             <>
-              {(isNoData && !workflowProcessData)
+              {!hasContent
                 ? <NoData />
-                : renderTextGenerationRes()
+                : (
+                  <div className='flex flex-col h-full'>
+                    {historyItem && (
+                      <div className='flex items-center justify-between px-3.5 py-2 mb-2 bg-amber-50/90 border border-amber-200/80 rounded-xl text-xs text-amber-900 shrink-0 shadow-xs'>
+                        <div className='flex items-center gap-2 overflow-hidden'>
+                          <ClockIcon className='w-4 h-4 text-amber-600 shrink-0' />
+                          <span className='truncate'>
+                            正在查看历史快照：<strong className='font-semibold'>{historyItem.title}</strong>
+                            <span className='ml-1 text-amber-600 font-normal'>（{formatExactTime(historyItem.createdAt)}）</span>
+                          </span>
+                        </div>
+                        <div className='flex items-center gap-2 shrink-0'>
+                          <button
+                            type='button'
+                            onClick={onExitHistory}
+                            className='px-2.5 py-1 rounded-lg bg-white border border-amber-300 text-amber-900 font-medium hover:bg-amber-100/60 transition-colors shadow-2xs'
+                          >
+                            返回实时视图
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {renderTextGenerationRes()}
+                  </div>
+                )
               }
             </>
           )

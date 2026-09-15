@@ -41,6 +41,7 @@ const getIcon = (type: BlockEnum, className: string) => {
     [BlockEnum.TemplateTransform]: <TemplatingTransform className={className} />,
     [BlockEnum.VariableAssigner]: <VariableX className={className} />,
     [BlockEnum.Tool]: <VariableX className={className} />,
+    [BlockEnum.Agent]: <Llm className={className} />,
   }[type]
 }
 const ICON_CONTAINER_BG_COLOR_MAP: Record<string, string> = {
@@ -55,6 +56,7 @@ const ICON_CONTAINER_BG_COLOR_MAP: Record<string, string> = {
   [BlockEnum.QuestionClassifier]: 'bg-[#16B364]',
   [BlockEnum.TemplateTransform]: 'bg-[#2E90FA]',
   [BlockEnum.VariableAssigner]: 'bg-[#2E90FA]',
+  [BlockEnum.Agent]: 'bg-[#875BF7]',
 }
 const BlockIcon: FC<BlockIconProps> = ({
   type,
